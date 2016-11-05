@@ -19,7 +19,7 @@ from PyQt4.QtCore import QThread
 from PyQt4.QtGui import QWidget
 
 Gestures = Enum('Gestures', 'ONE TWO THREE FOUR FIVE')
-gesture = QtCore.pyqtSignal(Gestures)
+
 
 class VideoGestureWidget(QWidget):
 
@@ -47,6 +47,7 @@ class VideoGestureWidget(QWidget):
     def setup_camera(self):
         """Initialize camera.
         """
+        # todo - handle exception if webcam is busy
         self.capture = cv2.VideoCapture(0)
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.video_size.width())
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.video_size.height())
@@ -59,24 +60,56 @@ class VideoGestureWidget(QWidget):
         """Read frame from camera and repaint QLabel widget.
         """
         _, frame = self.capture.read()
-        if frame is not None:
-            frame = find_gesture(frame)
-        #frame = cv2.cvtColor(frame, cv2.IMREAD_REDUCED_COLOR_2)# cv2.COLOR_BGR2RGB)
-        #frame = cv2.flip(frame, 1)
+        if frame is None:
+            return
+
+        frame, count_defects = find_gesture(frame)
+
+        self.current_gesture = count_defects
+
+        if count_defects == Gestures.ONE.value:
+            cv2.putText(frame, "closed fist", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
+            # gesture.emit(self.Gestures.CLOSED)
+        elif count_defects == 2:
+            str = "Two fingers"
+            cv2.putText(frame, str, (5, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
+        elif count_defects == 3:
+            cv2.putText(frame, "three fingers", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
+        elif count_defects == 4:
+            cv2.putText(frame, "four fingers", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
+        else:
+            cv2.putText(frame, "five fingers", (50, 50), \
+                        cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
+        # recast to RGB
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = QImage(frame, frame.shape[1], frame.shape[0],
                        frame.strides[0], QImage.Format_RGB888)
         self.image_label.setPixmap(QPixmap.fromImage(image))
 
+    def close(self):
+        self.timer.stop()
+        self.capture.release()
+        super(VideoGestureWidget, self).close()
 
-def find_gesture(img):
-    cv2.rectangle(img, (300, 300), (100, 100), (0, 255, 0), 0)
-    crop_img = img[100:300, 100:300]
+
+def find_gesture(img, hand_p0=(300, 300), hand_p1=(100, 100), invert=False):
+
+    # hand boundary rectangle
+    cv2.rectangle(img, hand_p1, hand_p0, (0, 255, 0), 0)
+    crop_img = img[hand_p1[1]:hand_p0[1], hand_p1[0]:hand_p0[0]]
     grey = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
+
+    # blur and threshold
     value = (35, 35)
     blurred = cv2.GaussianBlur(grey, value, 0)
     _, thresh1 = cv2.threshold(blurred, 127, 255,
                                cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    # cv2.imshow('Thresholded', thresh1)
+
+    # invert threshold if hand is brighter than background
+    if invert:
+        thresh1 = (255 - thresh1)
+
+    #cv2.imshow('Thresholded', thresh1)
 
     (version, _, _) = cv2.__version__.split('.')
 
@@ -114,30 +147,12 @@ def find_gesture(img):
         # dist = cv2.pointPolygonTest(cnt,far,True)
         cv2.line(crop_img, start, end, [0, 255, 0], 2)
         # cv2.circle(crop_img,far,5,[0,0,255],-1)
-    current_gesture = count_defects
-    if count_defects == Gestures.ONE.value:
-        cv2.putText(img, "closed fist", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
-        # gesture.emit(self.Gestures.CLOSED)
 
-    elif count_defects == 2:
-        str = "Two fingers"
-        cv2.putText(img, str, (5, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
-    elif count_defects == 3:
-        cv2.putText(img, "three fingers", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
-    elif count_defects == 4:
-        cv2.putText(img, "four fingers", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
-    else:
-        cv2.putText(img, "five fingers", (50, 50), \
-                    cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
-    # cv2.imshow('drawing', drawing)
-    # cv2.imshow('end', crop_img)
-    #cv2.imshow('Gesture', img)
-    all_img = np.hstack((drawing, crop_img))
-    # cv2.imshow('Contours', all_img)
-    k = cv2.waitKey(10)
-    if k == 27:
-        sys.exit(0)
-    return img
+    #cv2.imshow('drawing', drawing)
+    #cv2.imshow('end', crop_img)
+    #all_img = np.hstack((drawing, crop_img))
+    #cv2.imshow('Contours', all_img)
+    return img, count_defects
 
 
 if __name__ == "__main__":

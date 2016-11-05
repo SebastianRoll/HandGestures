@@ -20,8 +20,11 @@
  *                                                                         *
  ***************************************************************************/
 """
-from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
+from functools import partial
+
+from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt, qAbs
 from PyQt4.QtGui import QAction, QIcon
+from qgis._core import QgsRectangle, QgsVector
 # Initialize Qt resources from file resources.py
 import resources
 
@@ -29,7 +32,7 @@ import resources
 from hand_gestures_dockwidget import HandGesturesDockWidget
 import os.path
 
-from videogesturewidget import VideoGestureWidget
+from utils import do_zoom
 
 
 class HandGestures:
@@ -183,15 +186,15 @@ class HandGestures:
 
         #print "** CLOSING HandGestures"
 
-        self.video_widget.close()
         # disconnects
         self.dockwidget.closingPlugin.disconnect(self.onClosePlugin)
 
+        self.dockwidget.close()
         # remove this statement if dockwidget is to remain
         # for reuse if plugin is reopened
         # Commented next statement since it causes QGIS crashe
         # when closing the docked window:
-        # self.dockwidget = None
+        self.dockwidget = None
 
         self.pluginIsActive = False
 
@@ -223,18 +226,20 @@ class HandGestures:
             #    first run of plugin
             #    removed on close (see self.onClosePlugin method)
             if self.dockwidget == None:
+                canv = self.iface.mapCanvas()
+
                 # Create the dockwidget (after translation) and keep reference
-                self.dockwidget = HandGesturesDockWidget()
+                self.dockwidget = HandGesturesDockWidget(canv)
 
-            # connect to provide cleanup on closing of dockwidget
-            self.dockwidget.closingPlugin.connect(self.onClosePlugin)
+                # connect to provide cleanup on closing of dockwidget
+                self.dockwidget.closingPlugin.connect(self.onClosePlugin)
 
-            # add video widget
-            self.video_widget = VideoGestureWidget()
-            self.dockwidget.layout().addWidget(self.video_widget)
+                self.dockwidget.gesture.connect(partial(do_zoom, canv=canv))
 
-            # show the dockwidget
-            # TODO: fix to allow choice of dock location
-            self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockwidget)
-            self.dockwidget.show()
+
+                # show the dockwidget
+                # TODO: fix to allow choice of dock location
+                self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockwidget)
+                self.dockwidget.show()
+
 
